@@ -1,0 +1,154 @@
+# ============================================================
+# Docker Compose file for Lab 04 — Real-World Compose
+# ============================================================
+#
+# This file defines a realistic multi-service application:
+#
+#   1. nginx — Reverse proxy (the only service exposed to the host)
+#   2. api   — Flask REST API (internal only, not exposed to host)
+#   3. db    — PostgreSQL database (internal only, data persisted)
+#
+# Architecture:
+#
+#   ┌─────────────────────────────────────────────────────────┐
+#   │              Docker Compose Network                     │
+#   │                                                         │
+#   │   ┌──────────┐      ┌──────────┐      ┌─────────────┐  │
+#   │   │  nginx   │─────▶│   api    │─────▶│     db      │  │
+#   │   │  :80     │      │  :5000   │      │  :5432      │  │
+#   │   └──────────┘      └──────────┘      └─────────────┘  │
+#   │        │                                     │          │
+#   └────────┼─────────────────────────────────────┼──────────┘
+#            │                                     │
+#       port 80                              named volume
+#       (host access)                        (data persistence)
+#
+# How services find each other:
+#   Docker Compose automatically creates a network for all services
+#   defined in this file. Each service can reach the others using
+#   the service name as a hostname. For example:
+#     - Nginx connects to the API at http://api:5000
+#     - The API connects to PostgreSQL at db:5432
+#
+# Usage:
+#   docker compose up -d --build   Build images and start all services
+#   docker compose down            Stop and remove containers + network
+#   docker compose down -v         Same, but also remove the database volume
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # Nginx — Reverse Proxy (the front door)
+  # ----------------------------------------------------------
+  # This is the ONLY service exposed to the host machine. All
+  # external traffic enters through Nginx on port 80. Nginx
+  # forwards /api/* requests to the Flask backend internally.
+  # ----------------------------------------------------------
+  nginx:
+    # Build the Nginx image from the Dockerfile in the nginx/ directory.
+    build: ./nginx
+
+    # Map host port 80 to container port 80.
+    # This is the only port mapping in the entire Compose file —
+    # the api and db services are only reachable from inside the
+    # Docker network, not from the host. This is a security best
+    # practice: expose only what needs to be public.
+    ports:
+      - "80:80"
+
+    # Start Nginx only after the API service is running.
+    # Nginx needs the "api" hostname to be resolvable, so the
+    # api container must be started first.
+    depends_on:
+      - api
+
+    # Restart Nginx automatically if it crashes.
+    restart: unless-stopped
+
+  # ----------------------------------------------------------
+  # API — Flask Backend (internal only)
+  # ----------------------------------------------------------
+  # The Flask application that handles all business logic. It
+  # receives requests from Nginx, talks to PostgreSQL, and
+  # returns JSON responses.
+  #
+  # Notice: NO "ports" section here! The API is not exposed to
+  # the host machine. Only Nginx (and other services on the
+  # Compose network) can reach it. From the outside world, you
+  # go through Nginx at port 80, which proxies to api:5000.
+  # ----------------------------------------------------------
+  api:
+    # Build the API image from the Dockerfile in the api/ directory.
+    build: ./api
+
+    # env_file: Load environment variables from the .env file.
+    # This gives the Flask app the database credentials it needs
+    # (POSTGRES_DB, POSTGRES_USER, POSTGRES_PASSWORD). The same
+    # .env file is shared with the db service below so both sides
+    # use matching credentials — a single source of truth.
+    env_file:
+      - .env
+
+    # The API also needs to know the database hostname. We set
+    # this explicitly here because it's specific to the Compose
+    # setup (the hostname "db" matches the service name below).
+    environment:
+      - POSTGRES_HOST=db
+
+    # Start the API only after the database container is running.
+    # Note: depends_on only waits for the container to START, not
+    # for PostgreSQL to be READY. That's why app.py has a
+    # wait_for_db() retry loop — a real-world best practice.
+    depends_on:
+      - db
+
+    # Restart the API automatically if it crashes.
+    restart: unless-stopped
+
+  # ----------------------------------------------------------
+  # Database — PostgreSQL (internal only, with persistent data)
+  # ----------------------------------------------------------
+  # The official PostgreSQL image. It reads POSTGRES_DB,
+  # POSTGRES_USER, and POSTGRES_PASSWORD from the environment
+  # to automatically create a database and user on first start.
+  # ----------------------------------------------------------
+  db:
+    # Use the official PostgreSQL 16 image on Alpine Linux.
+    # Alpine keeps the image small (~230 MB vs ~420 MB for the
+    # full Debian-based image).
+    image: postgres:16-alpine
+
+    # Load the same .env file as the API service. PostgreSQL
+    # uses these variables to:
+    #   - Create a database named POSTGRES_DB ("taskmanager")
+    #   - Create a superuser with POSTGRES_USER ("admin")
+    #   - Set the password to POSTGRES_PASSWORD ("secretpassword")
+    env_file:
+      - .env
+
+    # volumes: Persist the database data to a named volume.
+    # PostgreSQL stores all its data in /var/lib/postgresql/data.
+    # By mapping a named volume here, the data survives container
+    # restarts and "docker compose down" (without -v).
+    #
+    # Use "docker compose down -v" to delete the volume and start
+    # fresh — you'll see this in action during the lab.
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+    # Restart PostgreSQL automatically if it crashes.
+    restart: unless-stopped
+
+# ============================================================
+# Named volumes
+# ============================================================
+# Declaring volumes here lets Compose manage them for you.
+# The volume persists even after "docker compose down", so your
+# database data is safe across restarts.
+#
+# To see all volumes:     docker volume ls
+# To remove this volume:  docker compose down -v
+# ============================================================
+volumes:
+  postgres-data:

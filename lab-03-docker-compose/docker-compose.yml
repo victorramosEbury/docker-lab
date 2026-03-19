@@ -1,0 +1,71 @@
+# ============================================================
+# Docker Compose file for Lab 03 — Flask + Redis
+# ============================================================
+#
+# This file defines two services that work together:
+#   1. web   — our Flask API (built from the Dockerfile in this directory)
+#   2. redis — a Redis key-value store (pulled from Docker Hub)
+#
+# Docker Compose creates a private network automatically, so the
+# services can reach each other by name (e.g., the Flask app
+# connects to Redis using the hostname "redis").
+#
+# Usage:
+#   docker compose up          Start both services (logs in foreground)
+#   docker compose up -d       Start both services (detached / background)
+#   docker compose down        Stop and remove containers + network
+#   docker compose down -v     Same as above, but also remove volumes
+# ============================================================
+
+services:
+
+  # ----------------------------------------------------------
+  # Web service — our Flask application
+  # ----------------------------------------------------------
+  web:
+    # build: tells Compose to build an image from the Dockerfile
+    # in the current directory (".") instead of pulling from Docker Hub.
+    build: .
+
+    # ports: maps port 5000 on your HOST machine to port 5000
+    # inside the container, just like "docker run -p 5000:5000".
+    # Format: "HOST_PORT:CONTAINER_PORT"
+    ports:
+      - "5000:5000"
+
+    # depends_on: tells Compose to start the redis service BEFORE
+    # starting the web service. Note — this only waits for the
+    # container to start, NOT for Redis to be "ready". For a
+    # production setup you would add a healthcheck, but for this
+    # lab the simple form is fine.
+    depends_on:
+      - redis
+
+    # environment: sets environment variables inside the container.
+    # FLASK_ENV=development enables helpful debug output.
+    environment:
+      - FLASK_ENV=development
+
+  # ----------------------------------------------------------
+  # Redis service — in-memory data store used as our counter backend
+  # ----------------------------------------------------------
+  redis:
+    # image: pull the official Redis image from Docker Hub.
+    # "7-alpine" gives us Redis 7 on a tiny Alpine Linux base
+    # (about 30 MB instead of ~130 MB for the full image).
+    image: redis:7-alpine
+
+    # volumes: persist Redis data to a named volume so the counter
+    # survives "docker compose down" (without -v) and restarts.
+    # The Redis image stores its data in /data by default.
+    volumes:
+      - redis-data:/data
+
+# ============================================================
+# Named volumes
+# ============================================================
+# Declaring volumes here lets Compose manage them for you.
+# You can see them with "docker volume ls" and remove them
+# with "docker compose down -v".
+volumes:
+  redis-data:

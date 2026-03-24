@@ -10,12 +10,11 @@ All the code is provided — you just need to follow the instructions in each la
 
 ### Install Docker
 
-The easiest way to install Docker is using the **ed2k** (Ebury Dockerized Development Kit) repository and its `local-setup.sh` script.
+The easiest way to install Docker is using the [ed2k](https://github.com/Ebury/ed2k) repository and its `local-setup.sh` script.
 
 1. Clone the ed2k repository (if you haven't already):
 
     ```bash
-    git clone git@github.com:Ebury/ed2k.git
     cd ed2k
     ```
 
